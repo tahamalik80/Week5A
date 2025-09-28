@@ -1,0 +1,236 @@
+---
+title: 'Assignment 5A: Airline Delays'
+author: "Taha Malik"
+date: "2025-09-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This analysis uses a richly expanded dataset of arrival delays, cancellations, and diversions for four major airlines across five West Coast cities. We will walk step-by-step through advanced data tidying, handling missing values, and providing meaningful visual and tabular comparisons both overall and by city. **Please note that additinal features were created in the csv to further showcase the process of analysis.**
+
+---
+
+## Data Source
+
+The dataset below was created for this project and contains intentionally missing values and a richer set of airlines and statuses.  
+**Key features:**  
+- Four airlines: ALASKA, AM WEST, UNITED, DELTA  
+- Four statuses: on time, delayed, canceled, diverted  
+- Five cities  
+- Some values are missing (blank cells)
+
+```csv
+Airline,Status,Los Angeles,Phoenix,San Diego,San Francisco,Seattle
+ALASKA,on time,497,221,212,503,1841
+ALASKA,delayed,62,12,20,102,305
+ALASKA,canceled,2,,1,,3
+ALASKA,diverted,0,0,,1,
+AM WEST,on time,694,4840,383,320,201
+AM WEST,delayed,117,415,65,129,61
+AM WEST,canceled,3,12,0,1,
+AM WEST,diverted,1,,2,0,0
+UNITED,on time,320,355,190,400,1800
+UNITED,delayed,45,33,25,80,260
+UNITED,canceled,2,1,2,1,0
+UNITED,diverted,0,0,0,2,
+DELTA,on time,610,210,200,355,1655
+DELTA,delayed,55,18,19,70,198
+DELTA,canceled,1,,3,1,
+DELTA,diverted,0,1,0,0,0
+```
+
+---
+
+## Step 1: Reading the Data
+
+```{r read-data, message=FALSE, warning=FALSE}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(knitr)
+
+# This chunk loads the required libraries for data manipulation and visualization.
+# - readr: for reading in CSV files
+# - dplyr: for data wrangling and transformation
+# - tidyr: for data tidying (wide to long format, handling missing values)
+# - ggplot2: for creating visualizations
+# - knitr: for rendering tables in the RMarkdown output
+
+# Read the expanded data
+delays_wide <- read_csv("arrival_delays.csv")
+
+# Display the original data as a table to confirm its structure and content.
+kable(delays_wide, caption = "Raw Expanded Data (Wide Format)")
+```
+**Description:**  
+This code loads all necessary libraries and reads the expanded CSV file into R. We also preview the data to confirm its structure and presence of missing values.
+
+---
+
+## Step 2: Handling and Filling Missing Data
+
+### Identifying Missing Data
+
+```{r missing-data}
+# This code chunk calculates the number of missing (NA) values in each column of our data.
+# This helps us understand where data might be missing and guides how we should handle it.
+
+missing_summary <- sapply(delays_wide, function(x) sum(is.na(x)))
+kable(as.data.frame(t(missing_summary)), caption = "Number of Missing Values per Column")
+```
+**Description:**  
+We use `sapply` to count missing values in every column. This diagnostic step is essential for documenting data quality and planning cleaning strategies.
+
+---
+
+### Filling Missing Data
+
+```{r fill-missing}
+# This code chunk fills all missing numeric values with 0.
+# The assumption is that a missing cell represents 0 flights of that status for that airline/city.
+# We use dplyr's mutate and across to apply replace_na across all numeric columns.
+
+delays_filled <- delays_wide %>%
+  mutate(across(where(is.numeric), ~replace_na(., 0)))
+kable(delays_filled, caption = "Missing Data Filled with 0")
+```
+**Description:**  
+Here, missing numeric values (NA) are replaced with zeros using `mutate(across(...))`. This is appropriate for summary tables where a blank cell implies "zero flights" for that combination.
+
+---
+
+## Step 3: Tidying Data (Wide to Long Format)
+
+```{r tidy-data}
+# This chunk converts the data from wide format (one column per city) to long (one row per observation).
+# We use tidyr's pivot_longer to gather all city columns into two columns: City and Count.
+# This tidy format is essential for flexible analysis and visualization.
+
+delays_long <- delays_filled %>%
+  pivot_longer(
+    cols = c(`Los Angeles`, Phoenix, `San Diego`, `San Francisco`, Seattle),
+    names_to = "City",
+    values_to = "Count"
+  )
+kable(head(delays_long, 12), caption = "First 12 Rows of Tidy Data")
+```
+**Description:**  
+`pivot_longer()` is used to create a tidy dataset, where each row represents a single airline/status/city/count observation. This structure is ideal for grouped analysis and plotting.
+
+---
+
+## Step 4: Overall Analysis (Counts and Percentages)
+
+### Overall Totals and Percentages
+
+```{r overall-analysis}
+# This chunk computes the total and percentage for each Airline/Status combination, across all cities.
+# The pipeline groups by airline and status, then computes totals.
+# Percentages are calculated within each airline, so each airline's statuses sum to 100%.
+
+overall_summary <- delays_long %>%
+  group_by(Airline, Status) %>%
+  summarise(Total = sum(Count), .groups = "drop") %>%
+  group_by(Airline) %>%
+  mutate(Percent = round(100 * Total / sum(Total), 1))
+kable(overall_summary, caption = "Overall Counts and Percentages by Airline and Status")
+```
+**Description:**  
+This code produces both total counts and percentages of each status per airline, offering a quick way to compare overall performance between airlines.
+
+---
+
+#### Visualization: Overall Percentages
+
+```{r plot-overall}
+# This chunk creates a bar plot of the percentage of each status (on time, delayed, canceled, diverted) by airline.
+# We use ggplot2 for a clear, color-coded presentation. Each airline's statuses are side-by-side for easy comparison.
+
+ggplot(overall_summary, aes(x = Airline, y = Percent, fill = Status)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  labs(title = "Overall Percentages by Airline and Status",
+       y = "Percentage (%)", x = "Airline") +
+  scale_fill_brewer(palette = "Set1")
+```
+**Description:**  
+This visualization provides an at-a-glance comparison of how each airline performs overall in terms of on-time, delayed, canceled, and diverted flights, highlighting both strengths and weaknesses.
+
+---
+
+## Step 5: City-by-City Analysis (Counts and Percentages)
+
+```{r city-by-city}
+# This chunk calculates totals and percentages for each Airline/City/Status combination.
+# By grouping by airline and city, we can spot city-specific issues or patterns.
+
+city_summary <- delays_long %>%
+  group_by(Airline, City, Status) %>%
+  summarise(Total = sum(Count), .groups = "drop") %>%
+  group_by(Airline, City) %>%
+  mutate(Percent = round(100 * Total / sum(Total), 1))
+kable(head(city_summary, 15), caption = "Sample City-by-City Counts and Percentages")
+```
+**Description:**  
+This table breaks down the data to the city level, allowing detailed performance analysis for every airline in every city.
+
+---
+
+#### Visualization: City-by-City Percentages
+
+```{r plot-city}
+# This chunk creates a faceted bar plot for status percentages in each city, separated by airline.
+# Each subplot represents an airline, with bars for each status in each city.
+
+ggplot(city_summary, aes(x = City, y = Percent, fill = Status)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~Airline) +
+  labs(title = "Arrival Status Percentages by Airline and City",
+       y = "Percentage (%)", x = "City") +
+  scale_fill_brewer(palette = "Set1") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+**Description:**  
+Faceted bar plots provide a powerful way to spot city-specific strengths and weaknesses for each airline, making disparities more visible than in overall summaries.
+
+---
+
+## Step 6: Analysis & Interpretation
+
+### Narrative
+
+- **Overall:**  
+  Each airline’s on-time, delayed, canceled, and diverted rates are now visible in both count and percent, helping us see which airline is most reliable overall.
+- **By City:**  
+  City-level analysis can reveal, for example, that an airline may be excellent overall but have issues in a particular city.
+- **Missing Data:**  
+  By filling missing values with zero, we ensure our analysis is comprehensive and not biased by blank cells. This is a standard approach for summary tables.
+- **Discrepancy Between Overall and City-by-City:**  
+  Sometimes, an airline with strong performance in one high-volume city can appear better overall, masking weaknesses elsewhere. City-by-city analysis reveals these local effects.
+- **Explanation:**  
+  This is related to Simpson’s Paradox; aggregated data can mask or reverse trends seen in subgroups. Thus, both levels of analysis are needed for a fair comparison.
+
+---
+
+## Step 7: Conclusion
+
+**Key points:**
+- **The dataset was expanded for realism**, including multiple airlines, more statuses, and missing data.
+- Missing data was detected, filled, and justified.
+- Data was tidied from wide to long for analysis flexibility.
+- Both overall and **city-by-city** analyses were performed, with visual and tabular summaries.
+- Discrepancy between overall and detailed analysis was discussed and explained.
+
+---
+
+## Submission Details
+
+- **GitHub Repository (.Rmd and .csv):** https://github.com/tahamalik80/Week5A
+- **RPubs Webpage:** https://rpubs.com/tmalik03/Week5A 
+
+---
